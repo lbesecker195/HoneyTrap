@@ -1,0 +1,115 @@
+# Continuous deployment for mcp_registery/ (https://ai.mcpharbor.dev).
+#
+# Every push and pull request that touches the registry runs the test suite.
+# Pushes to main then build a linux/amd64 release and ship it to the server.
+#
+# The only secret is MCP_REGISTRY_DEPLOY_KEY, an SSH key the server restricts
+# to /usr/local/sbin/mcp-registry-receive: it can install a release and nothing
+# else. Production configuration stays on the server in /etc/mcp-registry.env.
+name: MCP Registry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mcp_registery/**"
+      - ".github/workflows/mcp-registry.yml"
+  pull_request:
+    paths:
+      - "mcp_registery/**"
+      - ".github/workflows/mcp-registry.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: hexpm/elixir:1.20.4-erlang-29.0.6-debian-trixie-20260824-slim
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MIX_ENV: test
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    defaults:
+      run:
+        working-directory: mcp_registery
+    steps:
+      - name: Install build tools
+        working-directory: /
+        run: apt-get update && apt-get install -y --no-install-recommends build-essential git ca-certificates
+
+      - uses: actions/checkout@v5
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            mcp_registery/deps
+            mcp_registery/_build
+          key: mix-test-${{ runner.os }}-${{ hashFiles('mcp_registery/mix.lock') }}
+          restore-keys: mix-test-${{ runner.os }}-
+
+      - name: Install Hex and Rebar
+        run: mix local.hex --force && mix local.rebar --force
+
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+      - run: mix test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://ai.mcpharbor.dev
+    concurrency:
+      group: mcp-registry-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_TARGET: root@155.138.220.76
+      DEPLOY_HOST_KEY: "155.138.220.76 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA7Ruw29SGsoYE3qErWHngUQyoANZsn/vTZeEbCPZHgp"
+    defaults:
+      run:
+        working-directory: mcp_registery
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build release
+        run: echo "TARBALL=$(deploy/build-release.sh)" >> "$GITHUB_ENV"
+
+      - name: Ship release to the server
+        env:
+          DEPLOY_KEY: ${{ secrets.MCP_REGISTRY_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_TARGET" < "$TARBALL"
+
+      - name: Smoke test
+        run: |
+          for path in / /api/v0/servers /llms.txt; do
+            curl --fail --silent --show-error --retry 5 --retry-delay 3 -o /dev/null \
+              -w "https://ai.mcpharbor.dev$path -> %{http_code}\n" "https://ai.mcpharbor.dev$path"
+          done
+
+      - name: Remove deploy key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

@@ -1,0 +1,26 @@
+[Unit]
+Description=MCP Registry (Phoenix release)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=mcp_registry
+Group=mcp_registry
+WorkingDirectory=/opt/mcp-registry/current
+EnvironmentFile=/etc/mcp-registry.env
+ExecStartPre=/opt/mcp-registry/current/bin/migrate
+ExecStart=/opt/mcp-registry/current/bin/server
+Restart=on-failure
+RestartSec=5
+# This server is shared with other sites and has about 1 GB of memory.
+# Cap the registry so it can never starve them.
+MemoryHigh=300M
+MemoryMax=400M
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
