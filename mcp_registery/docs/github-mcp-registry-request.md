@@ -4,17 +4,17 @@ GitHub's MCP registry (github.com/mcp) is curated. Servers must first be in the
 official MCP Registry; onboarding is then requested in GitHub's discussion:
 https://github.com/github/github-mcp-server/discussions/1257
 
-Post this as a comment there once `io.github.lbesecker195/mcp-registry-search`
+Post this as a comment there once `io.github.lbesecker195/mcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace`
 is live in the official registry:
-https://registry.modelcontextprotocol.io/v0.1/servers/io.github.lbesecker195%2Fmcp-registry-search/versions/latest
+https://registry.modelcontextprotocol.io/v0.1/servers/io.github.lbesecker195%2Fmcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace/versions/latest
 
 ---
 
 Hi! Requesting onboarding for a remote server that's published in the
 official MCP Registry:
 
-**io.github.lbesecker195/mcp-registry-search**
-https://registry.modelcontextprotocol.io/v0.1/servers/io.github.lbesecker195%2Fmcp-registry-search/versions/latest
+**io.github.lbesecker195/mcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace**
+https://registry.modelcontextprotocol.io/v0.1/servers/io.github.lbesecker195%2Fmcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace/versions/latest
 
 It's an MCP server for finding other MCP servers. Agents can search more than
 31,000 servers by task, tool name or tag, get install configs, and submit new

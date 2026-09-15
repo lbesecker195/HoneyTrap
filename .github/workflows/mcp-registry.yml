@@ -123,6 +123,10 @@ jobs:
   # GitHub's MCP registry syncs from once a server is onboarded. GitHub OIDC
   # proves ownership of io.github.lbesecker195/*, so no secret is needed.
   # Bump "version" in server.json to publish changed metadata.
+  #
+  # When the server is renamed, add the old name to RETIRED_SERVER_NAMES. Once
+  # the new name is live the old one is marked deleted, because the registry's
+  # moderation policy treats one server listed under several names as spam.
   publish-mcp-registry:
     needs: deploy
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -132,24 +136,34 @@ jobs:
       id-token: write
     env:
       MCP_PUBLISHER_VERSION: "1.8.1"
+      RETIRED_SERVER_NAMES: "io.github.lbesecker195/mcp-registry-search"
     defaults:
       run:
         working-directory: mcp_registery
     steps:
       - uses: actions/checkout@v5
 
-      - name: Skip if this version is already published
-        id: check
+      - name: Work out what to publish and retire
+        id: plan
         run: |
+          api=https://registry.modelcontextprotocol.io/v0.1/servers
+          enc() { jq -rn --arg v "$1" '$v|@uri'; }
           name=$(jq -r .name server.json)
           version=$(jq -r .version server.json)
-          url="https://registry.modelcontextprotocol.io/v0.1/servers/$(jq -rn --arg v "$name" '$v|@uri')/versions/$(jq -rn --arg v "$version" '$v|@uri')"
-          status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$api/$(enc "$name")/versions/$(enc "$version")")
           echo "$name $version -> HTTP $status"
+          if [ "$status" = 200 ]; then echo "publish=false" >> "$GITHUB_OUTPUT"; else echo "publish=true" >> "$GITHUB_OUTPUT"; fi
+          retire=""
+          for old in $RETIRED_SERVER_NAMES; do
+            state=$(curl -s "$api/$(enc "$old")/versions/latest?include_deleted=true" \
+              | jq -r '._meta["io.modelcontextprotocol.registry/official"].status // "absent"')
+            echo "$old -> $state"
+            if [ "$state" != deleted ] && [ "$state" != absent ]; then retire="$retire $old"; fi
+          done
+          echo "retire=${retire# }" >> "$GITHUB_OUTPUT"
 
       - name: Install mcp-publisher (pinned, checksum verified)
-        if: steps.check.outputs.status != '200'
+        if: steps.plan.outputs.publish == 'true' || steps.plan.outputs.retire != ''
         run: |
           base="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}"
           curl -fsSLO "$base/mcp-publisher_linux_amd64.tar.gz"
@@ -157,9 +171,21 @@ jobs:
           grep -E ' mcp-publisher_linux_amd64\.tar\.gz$' "registry_${MCP_PUBLISHER_VERSION}_checksums.txt" | sha256sum -c -
           tar xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
 
-      - name: Publish to the official MCP Registry
-        if: steps.check.outputs.status != '200'
-        run: |
-          ./mcp-publisher login github-oidc
-          ./mcp-publisher publish
+      - name: Log in with GitHub OIDC
+        if: steps.plan.outputs.publish == 'true' || steps.plan.outputs.retire != ''
+        run: ./mcp-publisher login github-oidc
 
+      - name: Publish to the official MCP Registry
+        if: steps.plan.outputs.publish == 'true'
+        run: ./mcp-publisher publish
+
+      - name: Retire earlier names
+        if: steps.plan.outputs.retire != ''
+        env:
+          RETIRE: ${{ steps.plan.outputs.retire }}
+        run: |
+          current=$(jq -r .name server.json)
+          for old in $RETIRE; do
+            ./mcp-publisher status --status deleted --all-versions --yes \
+              --message "Renamed to $current" "$old"
+          done
