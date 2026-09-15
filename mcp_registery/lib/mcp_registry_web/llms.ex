@@ -19,7 +19,7 @@ defmodule McpRegistryWeb.Llms do
     With Claude Code: `claude mcp add --transport http mcp-registry-search #{base}/mcp`.
     Any other client: add a remote server with `"type": "http"` and that URL.
     It is also listed in the official MCP Registry as
-    `io.github.lbesecker195/mcp-registry-search`.
+    `io.github.lbesecker195/mcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace`.
 
     Tools:
 

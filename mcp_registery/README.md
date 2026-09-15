@@ -66,15 +66,24 @@ and their pages link back to the official entry.
 ## Listed in the official MCP Registry
 
 The registry's own MCP endpoint is published to the official MCP Registry as
-`io.github.lbesecker195/mcp-registry-search`, from `server.json` in this folder.
+`io.github.lbesecker195/mcp-registry-search-find-mcp-servers-discover-install-mcp-tools-directory-catalog-marketplace`, from `server.json` in this folder.
 The `publish-mcp-registry` job in the workflow publishes it after each
 successful deploy, authenticating with GitHub OIDC, so there is no secret to
 manage. It skips versions already published; bump `version` in `server.json`
 to publish changed metadata.
 
-The name, title and description are chosen for how registries search. The
-official registry matches substrings of the name only, so the name carries
-"mcp-registry" and "search"; the title and description carry the rest.
+The name, title and description are packed with the keywords agents use when
+looking for a server like this one (MCP registry optimization). The official
+registry's search matches substrings of the name only, so the name carries 16
+of them: mcp-registry, registry, search, find, find-mcp, discover, install,
+install-mcp, mcp-server, mcp-servers, servers, tools, mcp-tools, directory,
+catalog and marketplace. The title and description repeat them for registries
+that search those fields.
+
+To rename the server, change `name` in `server.json` and add the old name to
+`RETIRED_SERVER_NAMES` in the workflow. After the new name is published, the
+old one is marked deleted, because the official registry treats one server
+listed under several names as spam.
 
 GitHub's MCP registry at github.com/mcp is curated. It picks servers up from
 the official registry, but only after a manual onboarding request; see
