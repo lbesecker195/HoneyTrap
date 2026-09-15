@@ -16,7 +16,14 @@ defmodule McpRegistry.Registry do
   def list_servers(opts \\ []) do
     opts
     |> base_query()
-    |> order_by([s], asc: s.title, asc: s.id)
+    # Hand-curated and locally submitted listings first, then the official
+    # catalogue with the most recently updated servers first.
+    |> order_by([s],
+      asc: fragment("CASE WHEN ? = 'official' THEN 1 ELSE 0 END", s.origin),
+      desc_nulls_last: s.source_updated_at,
+      asc: s.title,
+      asc: s.id
+    )
     |> limit(^limit(opts))
     |> offset(^Keyword.get(opts, :offset, 0))
     |> Repo.all()
@@ -24,10 +31,11 @@ defmodule McpRegistry.Registry do
 
   def count_servers(opts \\ []), do: opts |> base_query() |> Repo.aggregate(:count)
 
-  def get_server!(name), do: Repo.get_by!(Server, name: name)
+  # Names are stored lowercase; the official registry allows mixed case.
+  def get_server!(name), do: Repo.get_by!(Server, name: String.downcase(name))
 
   def fetch_server(name) when is_binary(name) do
-    case Repo.get_by(Server, name: name) do
+    case Repo.get_by(Server, name: String.downcase(name)) do
       nil -> {:error, :not_found}
       server -> {:ok, server}
     end
@@ -35,26 +43,34 @@ defmodule McpRegistry.Registry do
 
   @doc """
   Publishes a listing. `:status` (default `"pending"`) is decided by the caller,
-  never by the submitted attributes; `:source` is only used for analytics.
+  never by the submitted attributes; `:source` is only used for analytics, and
+  `:origin` (default `"local"`) records where the listing came from.
+
+  Returns `{:error, :queue_full}` when a pending listing would exceed the
+  configured `:max_pending`.
   """
   def create_server(attrs, opts \\ []) do
     status = Keyword.get(opts, :status, "pending")
-    attrs = attrs |> Map.new(fn {k, v} -> {to_string(k), v} end) |> Map.put("status", status)
 
-    %Server{}
-    |> Server.changeset(attrs)
-    |> Repo.insert()
-    |> tap(fn
-      {:ok, server} ->
-        Analytics.track(:server_submitted, %{
-          status: server.status,
-          transport: server.transport,
-          source: Keyword.get(opts, :source, "web")
-        })
+    with :ok <- check_queue_capacity(status) do
+      attrs = attrs |> Map.new(fn {k, v} -> {to_string(k), v} end) |> Map.put("status", status)
 
-      _ ->
-        :ok
-    end)
+      %Server{}
+      |> Server.changeset(attrs)
+      |> Ecto.Changeset.put_change(:origin, Keyword.get(opts, :origin, "local"))
+      |> Repo.insert()
+      |> tap(fn
+        {:ok, server} ->
+          Analytics.track(:server_submitted, %{
+            status: server.status,
+            transport: server.transport,
+            source: Keyword.get(opts, :source, "web")
+          })
+
+        _ ->
+          :ok
+      end)
+    end
   end
 
   def update_server(%Server{} = server, attrs) do
@@ -68,6 +84,20 @@ defmodule McpRegistry.Registry do
   end
 
   def change_server(%Server{} = server, attrs \\ %{}), do: Server.changeset(server, attrs)
+
+  @doc "Deletes a pending listing. Active listings cannot be rejected."
+  def reject_server(name) when is_binary(name) do
+    with {:ok, server} <- fetch_server(name) do
+      if server.status == "pending", do: Repo.delete(server), else: {:error, :not_pending}
+    end
+  end
+
+  defp check_queue_capacity("pending") do
+    max = Application.get_env(:mcp_registry, :submissions, [])[:max_pending] || 500
+    if count_servers(status: "pending") >= max, do: {:error, :queue_full}, else: :ok
+  end
+
+  defp check_queue_capacity(_status), do: :ok
 
   @doc "The most-used tags among active servers, as `{tag, count}` pairs."
   def top_tags(n \\ 12) do
@@ -86,7 +116,8 @@ defmodule McpRegistry.Registry do
     %{
       servers: Repo.aggregate(active, :count),
       tools: active |> select([s], sum(fragment("cardinality(?)", s.tools))) |> Repo.one() || 0,
-      remote: active |> where([s], s.transport != "stdio") |> Repo.aggregate(:count)
+      remote: active |> where([s], s.transport != "stdio") |> Repo.aggregate(:count),
+      official: active |> where([s], s.origin == "official") |> Repo.aggregate(:count)
     }
   end
 

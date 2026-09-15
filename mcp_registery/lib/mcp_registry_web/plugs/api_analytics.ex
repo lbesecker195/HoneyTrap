@@ -9,7 +9,12 @@ defmodule McpRegistryWeb.Plugs.APIAnalytics do
   import Plug.Conn
   alias McpRegistry.Analytics
 
-  @tool_names %{index: "list_servers", show: "get_server", create: "publish_server"}
+  @tool_names %{
+    index: "list_servers",
+    show: "get_server",
+    create: "submit_server",
+    review: "review_submission"
+  }
 
   @impl true
   def init(opts), do: opts

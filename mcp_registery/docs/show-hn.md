@@ -26,8 +26,11 @@ something people can try right away, so post only after launch.
     the same server.json manifest format as the official MCP registry, so
     there's nothing new to learn if you already publish there.
 
-    Anyone can submit a server through a form; submissions are reviewed before
-    they show up in search. It starts with about twenty well-known servers.
+    The registry is also an MCP server itself, so an agent can connect to it,
+    search, and submit a server it finds, no account needed. Submissions from
+    agents and from the web form are reviewed before they show up in search.
+    It also mirrors the official MCP Registry, about 31,000 servers, synced
+    every six hours.
 
     For analytics I'm using Seriously Simple Analytics, which is free and can
     count API calls from agents as well as page views, which matters for a site

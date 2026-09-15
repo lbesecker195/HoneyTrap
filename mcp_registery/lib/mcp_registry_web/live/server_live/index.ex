@@ -5,6 +5,8 @@ defmodule McpRegistryWeb.ServerLive.Index do
   alias McpRegistry.Registry
   alias McpRegistry.Registry.Server
 
+  @per_page 48
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
@@ -12,7 +14,8 @@ defmodule McpRegistryWeb.ServerLive.Index do
      |> assign(:page_title, "Browse MCP servers")
      |> assign(:tags, Registry.top_tags(14))
      |> assign(:stats, Registry.stats())
-     |> assign(:transports, Server.transports())}
+     |> assign(:transports, Server.transports())
+     |> assign(:mcp_url, McpRegistryWeb.Endpoint.url() <> "/mcp")}
   end
 
   @impl true
@@ -20,13 +23,31 @@ defmodule McpRegistryWeb.ServerLive.Index do
     q = String.trim(params["q"] || "")
     transport = blank_to_nil(params["transport"])
     tag = blank_to_nil(params["tag"])
-    servers = Registry.list_servers(q: q, transport: transport, tag: tag, limit: 100)
+    filters = [q: q, transport: transport, tag: tag]
 
-    if connected?(socket) and q != "" do
-      Analytics.track(:search, %{results: length(servers), path: "/"})
+    total = Registry.count_servers(filters)
+    last_page = max(div(total + @per_page - 1, @per_page), 1)
+    page = params["page"] |> parse_page() |> min(last_page)
+
+    servers =
+      Registry.list_servers(filters ++ [limit: @per_page, offset: (page - 1) * @per_page])
+
+    if connected?(socket) and q != "" and page == 1 do
+      Analytics.track(:search, %{results: total, path: "/"})
     end
 
-    {:noreply, assign(socket, q: q, transport: transport, tag: tag, servers: servers)}
+    {:noreply,
+     assign(socket,
+       q: q,
+       transport: transport,
+       tag: tag,
+       servers: servers,
+       page: page,
+       last_page: last_page,
+       total: total,
+       first_shown: if(total == 0, do: 0, else: (page - 1) * @per_page + 1),
+       last_shown: min(page * @per_page, total)
+     )}
   end
 
   @impl true
@@ -42,11 +63,30 @@ defmodule McpRegistryWeb.ServerLive.Index do
       <section class="space-y-3">
         <h1 class="text-4xl font-bold tracking-tight">Find MCP servers your agent can use.</h1>
         <p class="text-base-content/70 max-w-2xl">
-          <b>{@stats.servers}</b>
-          Model Context Protocol servers exposing <b>{@stats.tools}</b>
-          tools, {@stats.remote} of them hosted remotely.
-          Browse below, or point an agent at <a href={~p"/llms.txt"} class="link">/llms.txt</a>.
+          <b>{format_number(@stats.servers)}</b>
+          Model Context Protocol servers, {format_number(@stats.remote)} of them hosted remotely.
+          <span :if={@stats.official > 0}>
+            Includes the whole <a
+              href="https://registry.modelcontextprotocol.io"
+              class="link"
+              rel="noopener"
+            >
+              official MCP Registry
+            </a>, kept in sync automatically.
+          </span>
+          Browse below, or <.link navigate={~p"/submit"} class="link">add one</.link>.
         </p>
+      </section>
+
+      <section id="for-agents" class="card bg-base-200">
+        <div class="card-body p-4 gap-2">
+          <h2 class="font-semibold">For AI agents</h2>
+          <p class="text-sm text-base-content/70">
+            This registry is an MCP server. Connect to it and your agent can search for servers and
+            submit new ones itself, with no account. Details in <a href={~p"/llms.txt"} class="link">/llms.txt</a>.
+          </p>
+          <pre class="bg-base-300 rounded-box p-3 text-xs overflow-x-auto"><code>claude mcp add --transport http mcp-registry-search {@mcp_url}</code></pre>
+        </div>
       </section>
 
       <form
@@ -93,6 +133,10 @@ defmodule McpRegistryWeb.ServerLive.Index do
         No servers match. <.link navigate={~p"/submit"} class="link">Submit one?</.link>
       </p>
 
+      <p :if={@total > 0} id="result-count" class="text-sm text-base-content/60">
+        Showing {format_number(@first_shown)}–{format_number(@last_shown)} of {format_number(@total)} servers
+      </p>
+
       <ul class="grid gap-3 sm:grid-cols-2">
         <li :for={server <- @servers}>
           <.link
@@ -120,16 +164,55 @@ defmodule McpRegistryWeb.ServerLive.Index do
           </.link>
         </li>
       </ul>
+
+      <nav :if={@last_page > 1} id="pagination" class="flex items-center justify-center gap-2">
+        <.link
+          :if={@page > 1}
+          patch={index_path(@q, @transport, @tag, @page - 1)}
+          class="btn btn-sm"
+          rel="prev"
+        >
+          <.icon name="hero-arrow-left-micro" class="size-4" /> Previous
+        </.link>
+        <span class="text-sm text-base-content/60 px-2">
+          Page {format_number(@page)} of {format_number(@last_page)}
+        </span>
+        <.link
+          :if={@page < @last_page}
+          patch={index_path(@q, @transport, @tag, @page + 1)}
+          class="btn btn-sm"
+          rel="next"
+        >
+          Next <.icon name="hero-arrow-right-micro" class="size-4" />
+        </.link>
+      </nav>
     </Layouts.app>
     """
   end
 
-  defp index_path(q, transport, tag) do
+  defp index_path(q, transport, tag, page \\ 1) do
     params =
-      [q: q, transport: transport, tag: tag]
+      [q: q, transport: transport, tag: tag, page: if(page > 1, do: page)]
       |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
 
     ~p"/?#{params}"
+  end
+
+  defp parse_page(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {page, ""} when page > 0 -> page
+      _ -> 1
+    end
+  end
+
+  defp parse_page(_), do: 1
+
+  defp format_number(n) when is_integer(n) do
+    n
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+    |> String.reverse()
   end
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil

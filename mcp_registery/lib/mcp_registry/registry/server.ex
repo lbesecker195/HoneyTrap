@@ -12,8 +12,9 @@ defmodule McpRegistry.Registry.Server do
   import Ecto.Changeset
 
   @transports ~w(stdio streamable-http sse)
-  @registries ~w(npm pypi oci nuget mcpb)
+  @registries ~w(npm pypi oci nuget mcpb cargo)
   @statuses ~w(active pending deprecated)
+  @origins ~w(local seed official)
   @list_fields [:env_vars, :tags, :tools]
   @name_format ~r/^[a-z0-9][a-z0-9.\-]*\/[a-z0-9][a-z0-9._\-]*$/
 
@@ -33,6 +34,9 @@ defmodule McpRegistry.Registry.Server do
     field :env_vars, {:array, :string}, default: []
     field :tags, {:array, :string}, default: []
     field :tools, {:array, :string}, default: []
+    field :origin, :string, default: "local"
+    field :source_updated_at, :utc_datetime_usec
+    field :synced_at, :utc_datetime_usec
 
     timestamps(type: :utc_datetime)
   end
@@ -40,6 +44,7 @@ defmodule McpRegistry.Registry.Server do
   def transports, do: @transports
   def registries, do: @registries
   def statuses, do: @statuses
+  def origins, do: @origins
 
   @doc "Everything after the slash: `io.github.acme/weather` becomes `weather`."
   def short_name(%__MODULE__{name: name}), do: short_name(name)
@@ -47,7 +52,14 @@ defmodule McpRegistry.Registry.Server do
 
   def remote?(%__MODULE__{transport: transport}), do: transport in ["streamable-http", "sse"]
 
-  def changeset(server, attrs) do
+  @doc """
+  Validates a listing. `origin` is never cast from attributes; callers set it.
+
+  Pass `imported: true` for listings copied from the official registry, whose
+  own rules allow shorter descriptions and longer version strings.
+  """
+  def changeset(server, attrs, opts \\ []) do
+    imported? = Keyword.get(opts, :imported, false)
     attrs = normalize_attrs(attrs)
 
     server
@@ -72,14 +84,18 @@ defmodule McpRegistry.Registry.Server do
     )
     |> validate_length(:name, max: 200)
     |> validate_length(:title, max: 120)
-    |> validate_length(:description, min: 10, max: 1000)
-    |> validate_length(:version, max: 40)
+    |> validate_length(:description, min: if(imported?, do: 1, else: 10), max: 1000)
+    |> validate_length(:version, max: if(imported?, do: 255, else: 40))
     |> validate_inclusion(:transport, @transports)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:package_registry, @registries)
-    |> validate_url(:remote_url)
-    |> validate_url(:repository_url)
-    |> validate_url(:website_url)
+    |> validate_url(:remote_url, imported?)
+    |> validate_url(:repository_url, imported?)
+    |> validate_url(:website_url, imported?)
+    |> validate_length(:remote_url, max: 4096)
+    |> validate_length(:repository_url, max: 4096)
+    |> validate_length(:website_url, max: 4096)
+    |> validate_length(:package_identifier, max: 1024)
     |> validate_distribution()
     |> validate_length(:tags, max: 12)
     |> unique_constraint(:name, message: "is already published")
@@ -112,17 +128,29 @@ defmodule McpRegistry.Registry.Server do
     items |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.uniq()
   end
 
-  defp validate_url(changeset, field) do
+  # Submissions here must be strictly valid URLs. Imported listings may carry
+  # placeholders the publisher expects users to fill in, such as
+  # https://{HOST}:{PORT}/mcp or https://example.com/mcp/[TOKEN].
+  defp validate_url(changeset, field, lenient?) do
     validate_change(changeset, field, fn ^field, value ->
-      case URI.new(value) do
-        {:ok, %URI{scheme: scheme, host: host}}
-        when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-          []
+      candidate = String.replace(value, ~r/\{[^{}]*\}/, "1")
 
-        _ ->
-          [{field, "must be an http(s) URL"}]
-      end
+      if http_url?(candidate, lenient?), do: [], else: [{field, "must be an http(s) URL"}]
     end)
+  end
+
+  defp http_url?(value, lenient?) do
+    uri =
+      case URI.new(value) do
+        {:ok, uri} -> uri
+        {:error, _} when lenient? -> URI.parse(value)
+        {:error, _} -> nil
+      end
+
+    match?(
+      %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and host not in [nil, ""],
+      uri
+    )
   end
 
   # A remote transport needs an endpoint; a stdio server needs a package; and a

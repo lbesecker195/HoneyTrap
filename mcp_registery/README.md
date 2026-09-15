@@ -13,15 +13,100 @@ published here unchanged.
   copy-pasteable install snippets for Claude Code and any `mcpServers`-style
   JSON config (Claude Desktop, Cursor, Windsurf, VS Code), the tool list, and
   the raw `server.json`.
+- **MCP endpoint** at `/mcp`: the registry is itself an MCP server
+  (Streamable HTTP, no auth) with `search_servers`, `get_server` and
+  `submit_server` tools, so an agent can find servers and add new ones on its
+  own. Connect with
+  `claude mcp add --transport http mcp-registry-search https://ai.mcpharbor.dev/mcp`.
 - **JSON API** at `/api/v0`, shaped after the official registry:
   - `GET /api/v0/servers?q=&transport=&tag=&limit=&offset=`
   - `GET /api/v0/servers/<namespace/name>` (the slash may be `%2F`)
-  - `POST /api/v0/servers` with `Authorization: Bearer <REGISTRY_PUBLISH_TOKEN>`
-    and a `server.json` body
-- **Submissions** at `/submit`: a public form. Web submissions are `pending`
-  until approved with `mix mcp.approve <name>`; API publishes go live at once.
-- **`/llms.txt`**: a plain-text guide for agents covering search, install and
-  publish, plus the analytics block described below.
+  - `POST /api/v0/servers` with a `server.json` manifest or flat fields.
+    Without a token it returns `202` and the listing waits for review; with
+    `Authorization: Bearer <REGISTRY_PUBLISH_TOKEN>` it returns `201` and goes
+    live.
+  - `POST /api/v0/review` for maintainers (see below)
+- **Submissions** at `/submit`: the same review queue, for people.
+- **`/llms.txt`**: a plain-text guide for agents covering connecting over MCP,
+  adding, searching and installing servers, plus the analytics block below.
+
+## The official MCP Registry sync
+
+The catalogue includes every server in the
+[official MCP Registry](https://registry.modelcontextprotocol.io), about
+31,000 at the time of writing. Its design docs ask downstream registries to
+copy its data this way.
+
+- **Schedule:** in production `McpRegistry.OfficialRegistry.Scheduler` runs
+  a sync every six hours: incremental normally, full once a week. Restarts and
+  deploys don't trigger extra runs, because the schedule reads the last
+  successful run from the `registry_syncs` table. The first run after a fresh
+  deploy starts two minutes after boot and takes about three minutes.
+- **Merging:** new servers go live. Listings copied earlier, and the starter
+  seeds, follow upstream for install details and description, but keep their
+  tags and tool names. Pending submissions here yield to the upstream owner.
+  Listings a maintainer approved here are never overwritten.
+- **Removals:** upstream deletions remove copied listings. A full sync also
+  removes copied listings that vanished upstream, unless it saw fewer than
+  half the servers we hold.
+- **Safety:** one sync at a time, enforced with a Postgres advisory lock.
+  Transient HTTP errors are retried. A failed run is recorded and changes
+  nothing further.
+
+Run it by hand locally, or turn off the schedule in production with
+`OFFICIAL_REGISTRY_SYNC=false`:
+
+```bash
+mix registry.sync_official --full
+```
+
+Imported listings are marked `origin: official` in the API and MCP results,
+and their pages link back to the official entry.
+
+## Listed in the official MCP Registry
+
+The registry's own MCP endpoint is published to the official MCP Registry as
+`io.github.lbesecker195/mcp-registry-search`, from `server.json` in this folder.
+The `publish-mcp-registry` job in the workflow publishes it after each
+successful deploy, authenticating with GitHub OIDC, so there is no secret to
+manage. It skips versions already published; bump `version` in `server.json`
+to publish changed metadata.
+
+The name, title and description are chosen for how registries search. The
+official registry matches substrings of the name only, so the name carries
+"mcp-registry" and "search"; the title and description carry the rest.
+
+GitHub's MCP registry at github.com/mcp is curated. It picks servers up from
+the official registry, but only after a manual onboarding request; see
+`docs/github-mcp-registry-request.md`.
+
+## Agent submissions and review
+
+Anyone may submit, and every submission without the publish token lands as
+`pending`. Pending listings are hidden from search and API listings, are
+visible by exact name so the submitter can check on them, and their pages are
+marked `noindex` with `nofollow ugc` links.
+
+Guard rails, set in `config/config.exs` under `:submissions`:
+
+- **Rate limit:** 10 submissions per client address per hour. Behind nginx the
+  client address comes from `X-Real-IP`, trusted only on loopback connections.
+- **Queue cap:** at most 500 pending listings; beyond that submissions get
+  `503` until the queue is reviewed.
+
+Reviewing takes the publish token from `deploy/.env`. List what's waiting:
+
+```bash
+curl -s "https://ai.mcpharbor.dev/api/v0/servers?status=pending" -H "Authorization: Bearer $REGISTRY_PUBLISH_TOKEN"
+```
+
+Approve or reject one:
+
+```bash
+curl -s -X POST https://ai.mcpharbor.dev/api/v0/review -H "Authorization: Bearer $REGISTRY_PUBLISH_TOKEN" -H "Content-Type: application/json" -d '{"name": "io.github.acme/weather", "decision": "approve"}'
+```
+
+Rejecting deletes the pending listing and frees its name.
 
 ## Running it
 
@@ -139,9 +224,6 @@ Day-to-day commands on the server:
 ssh root@155.138.220.76 "systemctl status mcp-registry; journalctl -u mcp-registry -n 50 --no-pager"
 ```
 
-```bash
-ssh root@155.138.220.76 "cd /opt/mcp-registry/current && set -a && . /etc/mcp-registry.env && set +a && runuser -u mcp_registry -- bin/mcp_registry rpc 'McpRegistry.Registry.approve_server(\"io.github.acme/weather\")'"
-```
 
 ## Configuration
 
@@ -150,6 +232,7 @@ ssh root@155.138.220.76 "cd /opt/mcp-registry/current && set -a && . /etc/mcp-re
 | `SSA_ACCOUNT_ID`         | Seriously Simple Analytics account ID (enables analytics) |
 | `SSA_PROJECT`            | Project label in the dashboard, default `mcp-registry`    |
 | `REGISTRY_PUBLISH_TOKEN` | Bearer token for `POST /api/v0/servers`                   |
+| `OFFICIAL_REGISTRY_SYNC` | Set to `false` to stop syncing the official registry in production |
 | `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST` | Standard Phoenix production settings |
 
 ## Layout
@@ -161,3 +244,7 @@ ssh root@155.138.220.76 "cd /opt/mcp-registry/current && set -a && . /etc/mcp-re
 - `lib/mcp_registry_web/live/server_live/` – browse, show, submit
 - `lib/mcp_registry_web/controllers/api/` – JSON API
 - `lib/mcp_registry_web/llms.ex` – the `/llms.txt` text
+- `lib/mcp_registry_web/mcp/` – the MCP server and its tools
+- `lib/mcp_registry_web/submissions.ex` – the one submission path for the API and MCP
+- `lib/mcp_registry/rate_limiter.ex` – per-client submission limits
+- `lib/mcp_registry/official_registry.ex` – the official registry sync and its merge rules

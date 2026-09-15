@@ -4,8 +4,20 @@
 - Server listings live in `McpRegistry.Registry`; the `server.json` mapping is
   `McpRegistry.Registry.Manifest`. Keep the API at `/api/v0` shaped like the
   official MCP registry.
-- Web submissions are `pending` until `mix mcp.approve <name>`; API publishes
-  need `REGISTRY_PUBLISH_TOKEN` and go live immediately.
+- Submissions from the web form, `POST /api/v0/servers` without a token, and
+  the MCP `submit_server` tool all land as `pending`. The publish token makes
+  API and MCP submissions go live at once. Review with `POST /api/v0/review`
+  (or `mix mcp.approve <name>` locally).
+- All programmatic submissions go through `McpRegistryWeb.Submissions`; keep
+  the API and the MCP tools on that one path so rate limits and auth stay
+  consistent.
+- About 31,000 listings come from the official MCP Registry through
+  `McpRegistry.OfficialRegistry`. Listings have an `origin` (`local`, `seed`,
+  `official`); never let user input set it. Test sync changes with the
+  `Req.Test` stub in `test/mcp_registry/official_registry_test.exs`, and try
+  real data locally with `mix registry.sync_official`.
+- The MCP endpoint (`/mcp`) is stateless Streamable HTTP. Tool descriptions in
+  `McpRegistryWeb.MCP.Tools` are read by models; keep them precise.
 - Analytics goes through `McpRegistry.Analytics.track/2` only. Never put
   request parameters, search text or credentials in an event.
 

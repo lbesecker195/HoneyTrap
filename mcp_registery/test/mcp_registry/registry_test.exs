@@ -74,6 +74,23 @@ defmodule McpRegistry.RegistryTest do
       refute Enum.any?(names.([]), &String.contains?(&1, "pending"))
     end
 
+    test "curated listings come first, then the most recently updated imports" do
+      imported = fn name, title, updated ->
+        server_fixture(%{name: name, title: title})
+        |> Ecto.Changeset.change(origin: "official", source_updated_at: updated)
+        |> McpRegistry.Repo.update!()
+      end
+
+      older = imported.("com.example/older", "Aaa older", ~U[2026-01-01 00:00:00.000000Z])
+      newer = imported.("com.example/newer", "Zzz newer", ~U[2026-09-01 00:00:00.000000Z])
+      curated = server_fixture(%{name: "io.github.acme/curated", title: "Mmm curated"})
+
+      names = Registry.list_servers(limit: 100) |> Enum.map(& &1.name)
+
+      assert Enum.filter(names, &(&1 in [older.name, newer.name, curated.name])) ==
+               [curated.name, newer.name, older.name]
+    end
+
     test "approve_server/1 makes a pending listing visible" do
       pending = server_fixture(%{status: "pending"})
       assert Registry.list_servers(q: pending.name) == []
@@ -103,6 +120,52 @@ defmodule McpRegistry.RegistryTest do
       assert attrs["package_identifier"] == "@acme/weather-mcp"
       assert attrs["env_vars"] == ["WEATHER_API_KEY"]
       assert {:ok, _} = Registry.create_server(Map.put(attrs, "name", "io.github.acme/copy"))
+    end
+  end
+
+  describe "Manifest.from_map/1 with official registry data" do
+    test "treats blank strings as missing and reads the older snake_case registry key" do
+      attrs =
+        Manifest.from_map(%{
+          "name" => "io.github.acme/legacy-server",
+          "title" => "  ",
+          "description" => "Legacy format.",
+          "version" => "1.0.0",
+          "repository" => %{"url" => ""},
+          "websiteUrl" => "",
+          "packages" => [%{"registry_type" => "pypi", "identifier" => "legacy-server"}]
+        })
+
+      assert attrs["title"] == "legacy server"
+      assert attrs["repository_url"] == nil
+      assert attrs["website_url"] == nil
+      assert attrs["package_registry"] == "pypi"
+    end
+
+    test "imported listings may have short descriptions and placeholder URLs; local ones may not" do
+      attrs = %{
+        name: "com.example/tenant",
+        title: "Tenant",
+        description: "Short.",
+        transport: "streamable-http",
+        remote_url: "https://{tenant}.example.com/mcp"
+      }
+
+      assert Server.changeset(%Server{}, attrs, imported: true).valid?
+      assert %{description: [_]} = errors_on(Server.changeset(%Server{}, attrs))
+
+      for url <- ["https://{HOST}:{PORT}/mcp", "https://support.example.com/api/mcp/[YOUR_TOKEN]"] do
+        assert Server.changeset(%Server{}, %{attrs | remote_url: url}, imported: true).valid?, url
+      end
+
+      for url <- ["ftp://example.com", "https:///no-host", "javascript:alert(1)"] do
+        refute Server.changeset(%Server{}, %{attrs | remote_url: url}, imported: true).valid?, url
+      end
+
+      assert %{remote_url: [_]} =
+               errors_on(
+                 Server.changeset(%Server{}, %{attrs | remote_url: "https://example.com/[TOKEN]"})
+               )
     end
   end
 

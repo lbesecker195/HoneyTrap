@@ -13,6 +13,8 @@ defmodule McpRegistry.Application do
       {DNSCluster, query: Application.get_env(:mcp_registry, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: McpRegistry.PubSub},
       {Task.Supervisor, name: McpRegistry.AnalyticsSupervisor},
+      McpRegistry.RateLimiter,
+      McpRegistry.OfficialRegistry.Scheduler,
       # Start a worker by calling: McpRegistry.Worker.start_link(arg)
       # {McpRegistry.Worker, arg},
       # Start to serve requests, typically the last entry

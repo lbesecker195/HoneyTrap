@@ -3,7 +3,7 @@ defmodule McpRegistryWeb.API.ServerController do
   import McpRegistryWeb.Routes
 
   alias McpRegistry.Registry
-  alias McpRegistry.Registry.Manifest
+  alias McpRegistryWeb.Submissions
 
   action_fallback McpRegistryWeb.API.FallbackController
 
@@ -11,23 +11,26 @@ defmodule McpRegistryWeb.API.ServerController do
   @max_limit 100
 
   def index(conn, params) do
-    limit = params["limit"] |> to_int(@default_limit) |> min(@max_limit) |> max(1)
-    offset = params["offset"] |> to_int(0) |> max(0)
+    with {:ok, status} <- listing_status(conn, params["status"]) do
+      limit = params["limit"] |> to_int(@default_limit) |> min(@max_limit) |> max(1)
+      offset = params["offset"] |> to_int(0) |> max(0)
 
-    opts = [
-      q: params["q"] || params["search"],
-      transport: params["transport"],
-      tag: params["tag"],
-      limit: limit,
-      offset: offset
-    ]
+      opts = [
+        q: params["q"] || params["search"],
+        transport: params["transport"],
+        tag: params["tag"],
+        status: status,
+        limit: limit,
+        offset: offset
+      ]
 
-    render(conn, :index,
-      servers: Registry.list_servers(opts),
-      total: Registry.count_servers(opts),
-      limit: limit,
-      offset: offset
-    )
+      render(conn, :index,
+        servers: Registry.list_servers(opts),
+        total: Registry.count_servers(opts),
+        limit: limit,
+        offset: offset
+      )
+    end
   end
 
   def show(conn, %{"name" => segments}) do
@@ -36,41 +39,47 @@ defmodule McpRegistryWeb.API.ServerController do
     end
   end
 
+  @doc """
+  Anyone may submit. Without a token the listing is pending review (202);
+  with the publish token it goes live at once (201).
+  """
   def create(conn, params) do
-    with :ok <- authorize(conn),
-         {:ok, server} <-
-           Registry.create_server(attrs_from(params), status: "active", source: "api") do
+    with {:ok, server} <- Submissions.submit(conn, params, "api") do
       conn
-      |> put_status(:created)
+      |> put_status(if server.status == "active", do: :created, else: :accepted)
       |> put_resp_header("location", api_server_path(server))
       |> render(:show, server: server)
     end
   end
 
-  # Accept either a server.json manifest or this registry's flat field names.
-  defp attrs_from(params) do
-    params = Map.drop(params, ["status"])
+  @doc "Maintainer review of a pending listing. Requires the publish token."
+  def review(conn, %{"name" => name, "decision" => decision})
+      when is_binary(name) and decision in ["approve", "reject"] do
+    with :ok <- Submissions.require_admin(conn) do
+      case decision do
+        "approve" ->
+          with {:ok, server} <- Registry.approve_server(name) do
+            render(conn, :show, server: server)
+          end
 
-    if Enum.any?(["packages", "remotes", "$schema"], &Map.has_key?(params, &1)),
-      do: Manifest.from_map(params),
-      else: params
-  end
-
-  defp authorize(conn) do
-    case Application.get_env(:mcp_registry, :registry, [])[:publish_token] do
-      token when token in [nil, ""] ->
-        {:error, :publishing_disabled}
-
-      token ->
-        case get_req_header(conn, "authorization") do
-          ["Bearer " <> given] ->
-            if Plug.Crypto.secure_compare(given, token), do: :ok, else: {:error, :unauthorized}
-
-          _ ->
-            {:error, :unauthorized}
-        end
+        "reject" ->
+          with {:ok, _server} <- Registry.reject_server(name) do
+            send_resp(conn, :no_content, "")
+          end
+      end
     end
   end
+
+  def review(_conn, _params), do: {:error, :bad_review}
+
+  # Only maintainers may list anything other than active servers.
+  defp listing_status(_conn, status) when status in [nil, "", "active"], do: {:ok, "active"}
+
+  defp listing_status(conn, status) when status in ["pending", "deprecated"] do
+    with :ok <- Submissions.require_admin(conn), do: {:ok, status}
+  end
+
+  defp listing_status(_conn, _status), do: {:error, :bad_status}
 
   defp to_int(nil, default), do: default
 

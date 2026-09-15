@@ -24,12 +24,20 @@ defmodule McpRegistryWeb.Router do
     get "/llms.txt", LlmsController, :show
   end
 
+  # The registry as an MCP server (Streamable HTTP): search, get and submit tools.
+  scope "/", McpRegistryWeb do
+    post "/mcp", MCPController, :post
+    get "/mcp", MCPController, :method_not_allowed
+    delete "/mcp", MCPController, :method_not_allowed
+  end
+
   # JSON API, shaped after the official MCP registry's /v0 endpoints.
   scope "/api/v0", McpRegistryWeb.API, as: :api do
     pipe_through :api
 
     get "/servers", ServerController, :index
     post "/servers", ServerController, :create
+    post "/review", ServerController, :review
     get "/servers/*name", ServerController, :show
   end
 

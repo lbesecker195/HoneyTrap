@@ -46,7 +46,7 @@ defmodule McpRegistry.Registry.Manifest do
   def from_map(%{} = json) do
     package = json |> Map.get("packages") |> first_map()
     remote = json |> Map.get("remotes") |> first_map()
-    meta = Map.get(json, "_meta") || %{}
+    meta = if is_map(json["_meta"]), do: json["_meta"], else: %{}
 
     transport =
       cond do
@@ -57,21 +57,31 @@ defmodule McpRegistry.Registry.Manifest do
 
     %{
       "name" => json["name"],
-      "title" => json["title"] || default_title(json["name"]),
-      "description" => json["description"],
-      "version" => json["version"] || (package && package["version"]),
+      "title" => present(json["title"]) || default_title(json["name"]),
+      "description" => present(json["description"]),
+      "version" => present(json["version"]) || (package && present(package["version"])),
       "transport" => transport,
-      "remote_url" => remote && remote["url"],
-      "package_registry" => package && package["registryType"],
-      "package_identifier" => package && package["identifier"],
-      "repository_url" => get_in(json, ["repository", "url"]),
-      "website_url" => json["websiteUrl"],
+      "remote_url" => remote && present(remote["url"]),
+      "package_registry" =>
+        package && present(package["registryType"] || package["registry_type"]),
+      "package_identifier" => package && present(package["identifier"]),
+      "repository_url" => present(get_in(json, ["repository", "url"])),
+      "website_url" => present(json["websiteUrl"]),
       "license" => meta[@meta_prefix <> "license"] || json["license"],
       "env_vars" => package |> env_vars(),
       "tags" => meta[@meta_prefix <> "tags"] || json["tags"] || [],
       "tools" => meta[@meta_prefix <> "tools"] || json["tools"] || []
     }
   end
+
+  defp present(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present(_), do: nil
 
   defp packages(%Server{package_registry: registry, package_identifier: identifier})
        when is_nil(registry) or is_nil(identifier),
@@ -114,10 +124,13 @@ defmodule McpRegistry.Registry.Manifest do
   defp env_vars(nil), do: []
 
   defp env_vars(package) do
-    package
-    |> Map.get("environmentVariables", [])
-    |> Enum.map(& &1["name"])
-    |> Enum.reject(&is_nil/1)
+    case Map.get(package, "environmentVariables") do
+      vars when is_list(vars) ->
+        vars |> Enum.map(&(is_map(&1) && &1["name"])) |> Enum.filter(&is_binary/1)
+
+      _ ->
+        []
+    end
   end
 
   defp secret?(name) do
@@ -128,7 +141,11 @@ defmodule McpRegistry.Registry.Manifest do
   defp first_map(_), do: nil
 
   defp default_title(nil), do: nil
-  defp default_title(name), do: name |> Server.short_name() |> String.replace(["-", "_"], " ")
+
+  defp default_title(name) when is_binary(name),
+    do: name |> Server.short_name() |> String.replace(["-", "_"], " ") |> String.slice(0, 120)
+
+  defp default_title(_), do: nil
 
   defp put_if(map, _key, nil), do: map
   defp put_if(map, key, value), do: Map.put(map, key, value)

@@ -11,6 +11,9 @@ defmodule McpRegistryWeb.ServerLive.Show do
     {:ok,
      assign(socket,
        page_title: server.title,
+       noindex: server.status != "active",
+       official_url:
+         if(server.synced_at, do: McpRegistry.OfficialRegistry.server_url(server.name)),
        server: server,
        short_name: Server.short_name(server),
        snippets: Install.snippets(server),
@@ -51,6 +54,19 @@ defmodule McpRegistryWeb.ServerLive.Show do
 
       <p class="text-base leading-relaxed">{@server.description}</p>
 
+      <p
+        :if={@server.synced_at}
+        id="official-provenance"
+        class="text-sm text-base-content/70 flex items-center gap-2"
+      >
+        <.icon name="hero-check-badge" class="size-4 text-success" />
+        <span>
+          Listed in the <a href={@official_url} class="link" rel="noopener">official MCP Registry</a>{synced_phrase(
+            @server.synced_at
+          )}.
+        </span>
+      </p>
+
       <div :if={@server.tags != []} class="flex flex-wrap gap-2">
         <.link :for={tag <- @server.tags} navigate={~p"/?tag=#{tag}"} class="badge badge-ghost">
           {tag}
@@ -59,6 +75,11 @@ defmodule McpRegistryWeb.ServerLive.Show do
 
       <section class="grid gap-8 md:grid-cols-[3fr_2fr]">
         <div class="space-y-6">
+          <p :if={@snippets == []} class="text-sm text-base-content/70">
+            There's no ready-made install snippet for this package type yet. See the repository or
+            website for setup instructions.
+          </p>
+
           <div :for={snippet <- @snippets} class="space-y-2">
             <h3 class="font-semibold">{snippet.label}</h3>
             <pre class="bg-base-300 rounded-box p-4 text-xs overflow-x-auto"><code>{snippet.code}</code></pre>
@@ -83,7 +104,7 @@ defmodule McpRegistryWeb.ServerLive.Show do
           <.list>
             <:item title="Transport">{@server.transport}</:item>
             <:item :if={@server.remote_url} title="Endpoint">
-              <a href={@server.remote_url} class="link break-all" rel="noopener">{@server.remote_url}</a>
+              <a href={@server.remote_url} class="link break-all" rel="nofollow ugc noopener">{@server.remote_url}</a>
             </:item>
             <:item :if={@server.package_identifier} title="Package">
               {@server.package_registry}: <code>{@server.package_identifier}</code>
@@ -92,12 +113,12 @@ defmodule McpRegistryWeb.ServerLive.Show do
               <code :for={var <- @server.env_vars} class="block">{var}</code>
             </:item>
             <:item :if={@server.repository_url} title="Repository">
-              <a href={@server.repository_url} class="link break-all" rel="noopener">
+              <a href={@server.repository_url} class="link break-all" rel="nofollow ugc noopener">
                 {@server.repository_url}
               </a>
             </:item>
             <:item :if={@server.website_url} title="Website">
-              <a href={@server.website_url} class="link break-all" rel="noopener">
+              <a href={@server.website_url} class="link break-all" rel="nofollow ugc noopener">
                 {@server.website_url}
               </a>
             </:item>
@@ -112,5 +133,19 @@ defmodule McpRegistryWeb.ServerLive.Show do
       </section>
     </Layouts.app>
     """
+  end
+
+  defp synced_phrase(%DateTime{} = at) do
+    minutes = max(DateTime.diff(DateTime.utc_now(), at, :minute), 0)
+
+    ago =
+      cond do
+        minutes < 1 -> "just now"
+        minutes < 60 -> "#{minutes} min ago"
+        minutes < 48 * 60 -> "#{div(minutes, 60)} h ago"
+        true -> "#{div(minutes, 1440)} days ago"
+      end
+
+    ", synced #{ago}"
   end
 end

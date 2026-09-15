@@ -1,14 +1,17 @@
 defmodule McpRegistryWeb.API.FallbackController do
   use McpRegistryWeb, :controller
 
-  def call(conn, {:error, %Ecto.Changeset{} = changeset}) do
-    details =
-      Ecto.Changeset.traverse_errors(changeset, &McpRegistryWeb.CoreComponents.translate_error/1)
+  alias McpRegistryWeb.Submissions
 
+  def call(conn, {:error, %Ecto.Changeset{} = changeset}) do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{
-      error: %{code: "validation_failed", message: "The listing is invalid.", details: details}
+      error: %{
+        code: "validation_failed",
+        message: "The listing is invalid. Fix the fields in details and submit again.",
+        details: Submissions.error_details(changeset)
+      }
     })
   end
 
@@ -21,17 +24,41 @@ defmodule McpRegistryWeb.API.FallbackController do
       conn,
       401,
       "unauthorized",
-      "Publishing requires 'Authorization: Bearer <REGISTRY_PUBLISH_TOKEN>'."
+      "This needs 'Authorization: Bearer <REGISTRY_PUBLISH_TOKEN>'. To submit a server for review, send the request without an Authorization header."
     )
   end
 
-  def call(conn, {:error, :publishing_disabled}) do
+  def call(conn, {:error, {:rate_limited, retry_after}}) do
+    conn
+    |> put_resp_header("retry-after", Integer.to_string(retry_after))
+    |> error(
+      429,
+      "rate_limited",
+      "Too many submissions from this client. Retry after #{retry_after} seconds."
+    )
+  end
+
+  def call(conn, {:error, :queue_full}) do
+    conn
+    |> put_resp_header("retry-after", "3600")
+    |> error(503, "queue_full", "The review queue is full. Try again later.")
+  end
+
+  def call(conn, {:error, :not_pending}) do
+    error(conn, 409, "not_pending", "Only pending listings can be rejected.")
+  end
+
+  def call(conn, {:error, :bad_review}) do
     error(
       conn,
-      403,
-      "publishing_disabled",
-      "API publishing is off. Set REGISTRY_PUBLISH_TOKEN, or use the /submit form."
+      400,
+      "bad_request",
+      ~s(Send {"name": "<server name>", "decision": "approve" | "reject"}.)
     )
+  end
+
+  def call(conn, {:error, :bad_status}) do
+    error(conn, 400, "bad_request", "status must be active, pending or deprecated.")
   end
 
   defp error(conn, status, code, message) do

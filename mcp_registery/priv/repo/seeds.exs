@@ -22,7 +22,7 @@ servers = [
     package_identifier: "@modelcontextprotocol/server-filesystem",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference files local official),
+    tags: ~w(reference files local),
     tools:
       ~w(read_file read_multiple_files write_file edit_file create_directory list_directory directory_tree move_file search_files get_file_info list_allowed_directories)
   },
@@ -37,7 +37,7 @@ servers = [
     package_identifier: "@modelcontextprotocol/server-memory",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference memory knowledge-graph official),
+    tags: ~w(reference memory knowledge-graph),
     tools:
       ~w(create_entities create_relations add_observations delete_entities delete_observations delete_relations read_graph search_nodes open_nodes)
   },
@@ -52,7 +52,7 @@ servers = [
     package_identifier: "@modelcontextprotocol/server-sequential-thinking",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference reasoning official),
+    tags: ~w(reference reasoning),
     tools: ~w(sequentialthinking)
   },
   %{
@@ -66,7 +66,7 @@ servers = [
     package_identifier: "@modelcontextprotocol/server-everything",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference testing official),
+    tags: ~w(reference testing),
     tools:
       ~w(echo add longRunningOperation printEnv sampleLLM getTinyImage annotatedMessage getResourceReference)
   },
@@ -81,7 +81,7 @@ servers = [
     package_identifier: "mcp-server-fetch",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference web http official),
+    tags: ~w(reference web http),
     tools: ~w(fetch)
   },
   %{
@@ -95,7 +95,7 @@ servers = [
     package_identifier: "mcp-server-git",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference git developer-tools official),
+    tags: ~w(reference git developer-tools),
     tools:
       ~w(git_status git_diff_unstaged git_diff_staged git_diff git_commit git_add git_reset git_log git_create_branch git_checkout git_show git_init)
   },
@@ -110,7 +110,7 @@ servers = [
     package_identifier: "mcp-server-time",
     repository_url: "https://github.com/modelcontextprotocol/servers",
     license: "MIT",
-    tags: ~w(reference time utilities official),
+    tags: ~w(reference time utilities),
     tools: ~w(get_current_time convert_time)
   },
   %{
@@ -312,7 +312,7 @@ servers = [
 for attrs <- servers do
   case Repo.get_by(Server, name: attrs.name) do
     nil ->
-      {:ok, _} = Registry.create_server(attrs, status: "active", source: "seed")
+      {:ok, _} = Registry.create_server(attrs, status: "active", source: "seed", origin: "seed")
 
     server ->
       {:ok, _} = Registry.update_server(server, Map.put(attrs, :status, "active"))

@@ -105,11 +105,61 @@ jobs:
 
       - name: Smoke test
         run: |
-          for path in / /api/v0/servers /llms.txt; do
+          for route in / /api/v0/servers /llms.txt; do
             curl --fail --silent --show-error --retry 5 --retry-delay 3 -o /dev/null \
-              -w "https://ai.mcpharbor.dev$path -> %{http_code}\n" "https://ai.mcpharbor.dev$path"
+              -w "https://ai.mcpharbor.dev$route -> %{http_code}\n" "https://ai.mcpharbor.dev$route"
           done
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' https://ai.mcpharbor.dev/mcp \
+            | jq -e '.result.tools | map(.name) | index("submit_server")' > /dev/null
+          echo "MCP endpoint lists its tools"
 
       - name: Remove deploy key
         if: always()
         run: rm -f ~/.ssh/deploy_key
+
+  # Publishes mcp_registery/server.json to the official MCP Registry, which
+  # GitHub's MCP registry syncs from once a server is onboarded. GitHub OIDC
+  # proves ownership of io.github.lbesecker195/*, so no secret is needed.
+  # Bump "version" in server.json to publish changed metadata.
+  publish-mcp-registry:
+    needs: deploy
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: "1.8.1"
+    defaults:
+      run:
+        working-directory: mcp_registery
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Skip if this version is already published
+        id: check
+        run: |
+          name=$(jq -r .name server.json)
+          version=$(jq -r .version server.json)
+          url="https://registry.modelcontextprotocol.io/v0.1/servers/$(jq -rn --arg v "$name" '$v|@uri')/versions/$(jq -rn --arg v "$version" '$v|@uri')"
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "$name $version -> HTTP $status"
+
+      - name: Install mcp-publisher (pinned, checksum verified)
+        if: steps.check.outputs.status != '200'
+        run: |
+          base="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}"
+          curl -fsSLO "$base/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSLO "$base/registry_${MCP_PUBLISHER_VERSION}_checksums.txt"
+          grep -E ' mcp-publisher_linux_amd64\.tar\.gz$' "registry_${MCP_PUBLISHER_VERSION}_checksums.txt" | sha256sum -c -
+          tar xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
+
+      - name: Publish to the official MCP Registry
+        if: steps.check.outputs.status != '200'
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+

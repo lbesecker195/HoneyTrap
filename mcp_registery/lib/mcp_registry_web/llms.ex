@@ -5,10 +5,73 @@ defmodule McpRegistryWeb.Llms do
     """
     # MCP Registry
 
-    > A registry of Model Context Protocol (MCP) servers. Everything below can be
-    > done with plain HTTP; no SDK or API key is needed to read.
+    > A registry of Model Context Protocol (MCP) servers. It includes every
+    > server in the official MCP Registry, re-synced every six hours, plus
+    > servers submitted here. Agents can search it and add servers to it, over
+    > MCP or plain HTTP. No account or API key is needed for either.
 
-    ## Find servers
+    ## Connect over MCP (recommended for agents)
+
+    The registry is itself an MCP server (Streamable HTTP, no auth):
+
+        #{base}/mcp
+
+    With Claude Code: `claude mcp add --transport http mcp-registry-search #{base}/mcp`.
+    Any other client: add a remote server with `"type": "http"` and that URL.
+    It is also listed in the official MCP Registry as
+    `io.github.lbesecker195/mcp-registry-search`.
+
+    Tools:
+
+    - `search_servers` finds servers by text, transport or tag.
+    - `get_server` returns one server's manifest, review status and install snippets.
+    - `submit_server` adds a server. Search first so you don't add a duplicate.
+
+    ## Add a server
+
+    Anyone may add a server, and agents are welcome to. New listings are
+    reviewed by a maintainer before they appear in search; until then
+    `get_server` (or the GET below) reports `"status": "pending"`.
+
+    Over MCP, call `submit_server`. Over HTTP:
+
+        POST #{base}/api/v0/servers
+        Content-Type: application/json
+
+        {"name": "io.github.acme/weather-mcp",
+         "title": "Weather",
+         "description": "Forecasts and severe-weather alerts by location.",
+         "version": "1.0.0",
+         "transport": "stdio",
+         "package_registry": "npm",
+         "package_identifier": "@acme/weather-mcp",
+         "env_vars": ["WEATHER_API_KEY"],
+         "tools": ["get_forecast", "get_alerts"],
+         "tags": ["weather"],
+         "repository_url": "https://github.com/acme/weather-mcp",
+         "license": "MIT"}
+
+    A server.json manifest (the official registry's format) is accepted too.
+
+    Rules:
+
+    - `name` is a reverse-DNS namespace, a slash, and a short name. For a
+      GitHub project use `io.github.<owner>/<repo>`.
+    - `transport` is `stdio` (needs `package_registry` and
+      `package_identifier`), `streamable-http` or `sse` (both need `remote_url`).
+    - `package_registry` is one of npm, pypi, oci, nuget, mcpb.
+    - `env_vars` holds variable names only. Never send secret values.
+
+    Responses:
+
+    - `202` accepted for review, with the stored entry.
+    - `422` invalid: `{"error": {"code": "validation_failed", "details": {"field": ["message"]}}}`.
+      Fix the named fields and resend.
+    - `429` too many submissions from one client; honour `Retry-After`.
+    - `401` only if you send an `Authorization` header that isn't the
+      maintainers' publish token. Leave the header out.
+
+    ## Find servers over HTTP
 
     GET #{base}/api/v0/servers?q=<text>&transport=<stdio|streamable-http|sse>&tag=<tag>&limit=30&offset=0
 
@@ -20,19 +83,24 @@ defmodule McpRegistryWeb.Llms do
 
     Page with `offset=next_offset` until `next_offset` is null.
 
-    ## Get one server
+    ## Get one server over HTTP
 
     GET #{base}/api/v0/servers/<name>
 
     Names look like `io.github.acme/weather`; the slash may be sent as-is or as
-    `%2F`. The response is one `{"server": ..., "_meta": ...}` entry. `server`
-    is a server.json manifest (schema: https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json):
+    `%2F`. The response is one `{"server": ..., "_meta": ...}` entry, and works
+    for pending submissions too. `server` is a server.json manifest (schema:
+    https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json):
 
     - `packages[0]` describes a locally-run server: `registryType` (npm, pypi,
       oci, nuget, mcpb), `identifier`, and `environmentVariables` to set.
     - `remotes[0]` describes a hosted endpoint: `type` (streamable-http or sse)
       and `url`.
     - `_meta["io.mcpregistry/tools"]` lists the tool names the server exposes.
+
+    The entry's own `_meta["io.mcpregistry/official"].origin` says where the
+    listing came from: `official` (copied from the official MCP Registry),
+    `seed` (the hand-curated starter set) or `local` (submitted here).
 
     ## Install a server
 
@@ -44,17 +112,6 @@ defmodule McpRegistryWeb.Llms do
     With Claude Code: `claude mcp add <short-name> -- npx -y <identifier>`, or
     `claude mcp add --transport http <short-name> <url>` for a remote server.
     Each server's HTML page at #{base}/servers/<name> shows ready-made snippets.
-
-    ## Publish a server
-
-    POST #{base}/api/v0/servers
-    Authorization: Bearer <token>
-    Content-Type: application/json
-
-    The body is a server.json manifest. `201` returns the stored entry; `422`
-    returns `{"error": {"code": "validation_failed", "details": {...}}}`.
-    Without a token, submit through the form at #{base}/submit; listings from
-    the form are reviewed before they appear in search.
 
     ## Analytics
 

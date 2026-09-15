@@ -25,6 +25,8 @@ defmodule McpRegistryWeb.API.ServerJSON do
       _meta: %{
         "io.mcpregistry/official" => %{
           status: server.status,
+          origin: server.origin,
+          synced_at: server.synced_at,
           published_at: server.inserted_at,
           updated_at: server.updated_at,
           is_latest: true

@@ -29,6 +29,10 @@ defmodule McpRegistryWeb.ServerLive.New do
          |> put_flash(:info, "Thanks! #{server.name} is submitted and pending review.")
          |> push_navigate(to: server_path(server))}
 
+      {:error, :queue_full} ->
+        {:noreply,
+         put_flash(socket, :error, "The review queue is full right now. Please try again later.")}
+
       {:error, changeset} ->
         {:noreply, assign(socket, form: to_form(changeset, action: :insert))}
     end
@@ -41,9 +45,9 @@ defmodule McpRegistryWeb.ServerLive.New do
       <.header>
         Submit an MCP server
         <:subtitle>
-          Listings appear in search after a quick review. Publishers with a token can also
-          <code>POST /api/v0/servers</code>
-          a server.json manifest; see <a href={~p"/llms.txt"} class="link">llms.txt</a>.
+          Listings appear in search after a quick review. AI agents can submit on their own through
+          the MCP endpoint at <code>/mcp</code>
+          or <code>POST /api/v0/servers</code>; see <a href={~p"/llms.txt"} class="link">llms.txt</a>.
         </:subtitle>
       </.header>
 

@@ -41,6 +41,7 @@ defmodule McpRegistryWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  plug McpRegistryWeb.Plugs.ClientIP
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,

@@ -69,6 +69,25 @@ config :mcp_registry, :analytics,
 # to disable API publishing; the /submit web form still works.
 config :mcp_registry, :registry, publish_token: nil
 
+# Anonymous submissions (JSON API and MCP) go to review. Each client address
+# may submit this many per hour, and the review queue is capped so a flood of
+# submissions cannot fill the database.
+config :mcp_registry, :submissions,
+  per_client_per_hour: 10,
+  max_pending: 500
+
+# Copy the official MCP Registry's catalogue on a schedule. Enabled in
+# production from config/runtime.exs; run `mix registry.sync_official` locally.
+config :mcp_registry, :official_registry,
+  base_url: "https://registry.modelcontextprotocol.io",
+  page_size: 100,
+  page_delay_ms: 250,
+  sync_enabled: false,
+  sync_interval_ms: :timer.hours(6),
+  full_sync_every_ms: :timer.hours(24 * 7),
+  initial_delay_ms: :timer.minutes(2),
+  req_options: []
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

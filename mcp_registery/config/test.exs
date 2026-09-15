@@ -33,3 +33,13 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Many tests submit from the same address; the rate limit test lowers this itself.
+config :mcp_registry, :submissions,
+  per_client_per_hour: 10_000,
+  max_pending: 10_000
+
+# The official registry is stubbed with Req.Test in tests.
+config :mcp_registry, :official_registry,
+  page_delay_ms: 0,
+  req_options: [plug: {Req.Test, McpRegistry.OfficialRegistry}, retry_delay: 0, max_retries: 2]

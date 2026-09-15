@@ -128,6 +128,11 @@ if config_env() == :prod do
 end
 
 # Runtime settings shared by every environment.
+if config_env() == :prod do
+  config :mcp_registry, :official_registry,
+    sync_enabled: System.get_env("OFFICIAL_REGISTRY_SYNC", "true") not in ~w(false 0)
+end
+
 if account_id = System.get_env("SSA_ACCOUNT_ID") do
   config :mcp_registry, :analytics,
     account_id: account_id,

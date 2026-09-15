@@ -63,7 +63,15 @@ defmodule McpRegistryWeb.Layouts do
 
     <footer class="px-4 py-8 sm:px-6 lg:px-8 border-t border-base-300 text-sm text-base-content/70">
       <div class="mx-auto max-w-5xl flex flex-col sm:flex-row gap-2 justify-between">
-        <span>An open registry of Model Context Protocol servers, built with Phoenix.</span>
+        <span>
+          An open registry of Model Context Protocol servers, built with Phoenix. Includes listings from the <a
+            href="https://registry.modelcontextprotocol.io"
+            class="link"
+            rel="noopener"
+          >
+            official MCP Registry
+          </a>.
+        </span>
         <span>
           Analytics by
           <a href="https://seriouslysimpleanalytics.com" class="link" rel="noopener">
