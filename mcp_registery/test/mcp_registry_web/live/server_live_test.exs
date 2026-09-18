@@ -40,6 +40,19 @@ defmodule McpRegistryWeb.ServerLiveTest do
     assert html =~ "get_forecast"
   end
 
+  test "show sets a fixed SEO title and meta description", %{conn: conn} do
+    server = server_fixture(%{name: "io.github.upstash/context7-seo", title: "Context7"})
+    html = conn |> get("/servers/#{server.name}") |> html_response(200)
+
+    assert html =~ "Context7 MCP</title>"
+    refute html =~ "Context7 MCP · MCP Registry"
+
+    assert html =~
+             ~s(<meta name="description" content="Context7 MCP server integration.  ) <>
+               ~s(Upstash Context7 MCP server.  How to integrate with Claude Context7 using MCP ) <>
+               ~s(and Cursor Context7 using MCP so I can use them in Claude Code and Grok Bot.")
+  end
+
   test "pending listings are kept out of search engines", %{conn: conn} do
     active = server_fixture()
     pending = server_fixture(%{status: "pending"})

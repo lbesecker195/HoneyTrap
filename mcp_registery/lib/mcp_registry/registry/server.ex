@@ -50,6 +50,26 @@ defmodule McpRegistry.Registry.Server do
   def short_name(%__MODULE__{name: name}), do: short_name(name)
   def short_name(name) when is_binary(name), do: name |> String.split("/") |> List.last()
 
+  @doc """
+  Best-effort publisher name for SEO copy, derived from the reverse-DNS
+  namespace: `io.github.acme/weather` becomes `Acme`, `com.brave/brave-search`
+  becomes `Brave`. There is no dedicated company field, so this is a guess,
+  not an authoritative vendor name.
+  """
+  def company_name(%__MODULE__{name: name}), do: company_name(name)
+
+  def company_name(name) when is_binary(name) do
+    namespace = name |> String.split("/") |> List.first() || ""
+    segment = namespace |> String.split(".") |> List.last() || namespace
+
+    case segment |> String.split(~r/[-_]/, trim: true) |> Enum.map(&String.capitalize/1) do
+      [] -> "MCP"
+      words -> Enum.join(words, " ")
+    end
+  end
+
+  def company_name(_), do: "MCP"
+
   def remote?(%__MODULE__{transport: transport}), do: transport in ["streamable-http", "sse"]
 
   @doc """

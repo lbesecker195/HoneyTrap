@@ -10,7 +10,9 @@ defmodule McpRegistryWeb.ServerLive.Show do
 
     {:ok,
      assign(socket,
-       page_title: server.title,
+       page_title: meta_title(server),
+       title_suffix: "",
+       meta_description: meta_description(server),
        noindex: server.status != "active",
        official_url:
          if(server.synced_at, do: McpRegistry.OfficialRegistry.server_url(server.name)),
@@ -147,5 +149,16 @@ defmodule McpRegistryWeb.ServerLive.Show do
       end
 
     ", synced #{ago}"
+  end
+
+  defp meta_title(server), do: "#{server.title} MCP"
+
+  defp meta_description(server) do
+    name = server.title
+    company = Server.company_name(server)
+
+    "#{name} MCP server integration.  #{company} #{name} MCP server.  " <>
+      "How to integrate with Claude #{name} using MCP and Cursor #{name} using MCP " <>
+      "so I can use them in Claude Code and Grok Bot."
   end
 end
