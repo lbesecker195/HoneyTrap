@@ -194,4 +194,17 @@ defmodule McpRegistry.RegistryTest do
       assert json_code =~ ~s("type": "sse")
     end
   end
+
+  describe "Server.company_name/1" do
+    test "derives a publisher name from the reverse-DNS namespace" do
+      assert Server.company_name("io.github.upstash/context7") == "Upstash"
+      assert Server.company_name("com.brave/brave-search") == "Brave"
+      assert Server.company_name("io.github.model-context-protocol/x") == "Model Context Protocol"
+    end
+
+    test "falls back to a safe default for malformed or missing names" do
+      assert Server.company_name("weather") == "Weather"
+      assert Server.company_name(nil) == "MCP"
+    end
+  end
 end
