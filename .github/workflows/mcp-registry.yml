@@ -175,10 +175,9 @@ jobs:
         if: steps.plan.outputs.publish == 'true' || steps.plan.outputs.retire != ''
         run: ./mcp-publisher login github-oidc
 
-      - name: Publish to the official MCP Registry
-        if: steps.plan.outputs.publish == 'true'
-        run: ./mcp-publisher publish
-
+      # Runs before publishing: the registry rejects a server whose remote URL
+      # (https://ai.mcpharbor.dev/mcp) is already claimed by another active
+      # server, so an old name has to be retired first to free that URL up.
       - name: Retire earlier names
         if: steps.plan.outputs.retire != ''
         env:
@@ -189,3 +188,7 @@ jobs:
             ./mcp-publisher status --status deleted --all-versions --yes \
               --message "Renamed to $current" "$old"
           done
+
+      - name: Publish to the official MCP Registry
+        if: steps.plan.outputs.publish == 'true'
+        run: ./mcp-publisher publish
