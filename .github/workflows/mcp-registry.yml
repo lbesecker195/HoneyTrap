@@ -1,23 +1,13 @@
-# Continuous deployment for mcp_registery/ (https://ai.mcpharbor.dev).
-#
-# Every push and pull request that touches the registry runs the test suite.
-# Pushes to main then build a linux/amd64 release and ship it to the server.
-#
-# The only secret is MCP_REGISTRY_DEPLOY_KEY, an SSH key the server restricts
-# to /usr/local/sbin/mcp-registry-receive: it can install a release and nothing
-# else. Production configuration stays on the server in /etc/mcp-registry.env.
-name: MCP Registry
+# RETIRED: this repo no longer deploys the MCP Registry. The canonical repo
+# is now https://github.com/lbesecker195/MCP_Registry, which has its own
+# test/deploy/publish-mcp-registry pipeline and the production deploy key.
+# mcp_registery/ here is left as a historical snapshot; automatic triggers
+# are disabled below so this can never race MCP_Registry's pipeline for the
+# same production target (root@155.138.220.76, service mcp-registry). Run
+# manually via workflow_dispatch only if you specifically need to.
+name: MCP Registry (retired -- see MCP_Registry repo)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "mcp_registery/**"
-      - ".github/workflows/mcp-registry.yml"
-  pull_request:
-    paths:
-      - "mcp_registery/**"
-      - ".github/workflows/mcp-registry.yml"
   workflow_dispatch:
 
 permissions:
