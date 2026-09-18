@@ -1,0 +1,3 @@
+This directory holds the ExUnit/Phoenix.LiveViewTest suite for the app's LiveViews. `server_live_test.exs` exercises the home page's listing and search form, its pagination, the server detail page's install snippets and `server.json` manifest, the "pending" listing noindex/nofollow behavior, official-registry attribution and "synced" timestamps, the 404 for unknown servers, and the `/submit` form's validation and pending-listing creation flow.
+
+None of this code runs on the live site. It only runs locally and in CI against a sandboxed test database to confirm the LiveViews behave correctly before a change ships, so it has no page of its own on https://ai.mcpharbor.dev.

@@ -1,0 +1,5 @@
+This directory implements the registry's Model Context Protocol server: the JSON-RPC 2.0 handler in `server.ex` and the three tools it exposes in `tools.ex`. Together they power the live [MCP endpoint](https://ai.mcpharbor.dev/mcp) that AI agents connect to over Streamable HTTP.
+
+`server.ex` handles `initialize`, `ping`, `tools/list`, and `tools/call`, records each call in analytics, and returns JSON-RPC errors for anything else. `tools.ex` defines `search_servers`, `get_server`, and `submit_server`: the same search, lookup, and submission logic the human-facing site uses, exposed with schemas and descriptions written for a calling model instead of a person.
+
+Agents following the registry's guidance at https://ai.mcpharbor.dev/llms.txt are directed here to look servers up or add one without leaving their own chat, and every tool result links back to the matching listing under `/servers/<name>` so an agent, or the human reading its output, can open install snippets and the full server.json. A server submitted through `submit_server` enters the same review queue as one submitted via the web form, and appears in search once approved.
