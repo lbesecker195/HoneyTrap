@@ -1,0 +1,5 @@
+This is the standard `mix release` configuration directory for the Phoenix app. It currently holds one subdirectory, `overlays/`, whose `bin/` scripts (`server`, `migrate`, `seed`, plus `.bat` variants of `server` and `migrate`) get copied verbatim into the compiled release's `bin/` folder next to the generated `mcp_registry` executable.
+
+Those scripts are what a deploy actually runs: `server` sets `PHX_SERVER=true` and execs `./mcp_registry start` to boot the production process, `migrate` execs `McpRegistry.Release.migrate` to apply pending Ecto migrations against the production Postgres database, and `seed` execs `McpRegistry.Release.seed` to load seed data into a freshly built release. None of them run as part of handling an HTTP request.
+
+Because everything under `rel/` executes at build- or deploy-time (packaging the release, then starting/migrating/seeding it) rather than at request time, it has no direct, page-level effect on the live site. No content, routing, or rendering for any URL on the site flows through this directory, so there is nothing here to link to.

@@ -1,0 +1,5 @@
+# Plugs Tests
+
+This directory holds one ExUnit test, `client_ip_test.exs`, covering the `ClientIP` plug in `lib/mcp_registry_web/plugs` (the sibling `APIAnalytics` plug has no test here). `ClientIP` rewrites `conn.remote_ip` from the `X-Real-IP` header nginx sets in production, but only when the immediate connecting peer is loopback. The test asserts that IPv4 and IPv6 addresses are trusted when the peer is loopback, that the header is ignored when the peer is not loopback, and that a missing or malformed header leaves the original address alone.
+
+This is a test fixture, not something served to visitors: it runs under `mix test` and in CI, never inside the deployed app, so it has no direct effect on any live page or URL. Its value is indirect — a correct `ClientIP` is what lets `McpRegistry.RateLimiter` key its per-client submission limit on the real caller instead of the proxy's own address, for submissions made through the JSON API's create action or the MCP endpoint's `submit_server` tool. This test is what keeps that correction from silently breaking.
